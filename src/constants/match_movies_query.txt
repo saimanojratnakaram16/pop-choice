@@ -1,0 +1,50 @@
+-- Supabase SQL reference for semantic movie search.
+-- Run this in the Supabase SQL editor after creating your project.
+
+-- Supabase SQL reference for semantic movie search.
+-- Run this in the Supabase SQL editor after creating your project.
+
+-- Supabase SQL reference for semantic movie search.
+-- Run this in the Supabase SQL editor after creating your project.
+
+-- 1. Create the movies table.
+create table if not exists movies (
+  id bigserial primary key,
+  content text,
+  embedding vector(1536)
+);
+
+-- 2. Create the match_movies RPC function.
+create or replace function public.match_movies(
+  query_embedding vector(1536),
+  match_threshold double precision default 0.5,
+  match_count int default 4
+)
+returns table (
+  id bigint,
+  content text,
+  similarity double precision
+)
+language sql stable as $$
+  select
+    id,
+    content,
+    1 - (embedding <#> query_embedding) as similarity
+  from movies
+  where embedding is not null
+    and 1 - (embedding <#> query_embedding) >= match_threshold
+  order by embedding <#> query_embedding
+  limit match_count;
+$$;
+
+-- 3. Example: populate the embedding column using an external script.
+-- Use the OpenAI embedding API to generate a 1536-d vector for each movie row,
+-- then update public.movies set embedding = <vector> where id = <movie_id>.
+
+-- 3. Example: populate the embedding column using an external script.
+-- Use the OpenAI embedding API to generate a 1536-d vector for each movie row,
+-- then update public.movies set embedding = <vector> where id = <movie_id>.
+
+-- 4. Example: populate the embedding column using an external script.
+-- Use the OpenAI embedding API to generate a 1536-d vector for each movie row,
+-- then update public.movies set embedding = <vector> where id = <movie_id>.
