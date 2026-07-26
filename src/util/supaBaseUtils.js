@@ -11,6 +11,42 @@ function buildQuery(usersChoiceData) {
     .join(' | ')
 }
 
+function splitRecommendationBlocks(text) {
+  const normalizedText = text.replace(/\r\n/g, '\n').trim()
+  if (!normalizedText) return []
+
+  const listBlocks = normalizedText
+    .split(/\n(?=(?:\d+[.)]|[-*•])\s)/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+
+  if (listBlocks.length > 1) return listBlocks
+
+  return normalizedText
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+}
+
+function parseRecommendationBlock(block) {
+  const cleanedBlock = block.replace(/^\s*(?:\d+[.)]|[-*•])\s*/, '').trim()
+  if (!cleanedBlock) return null
+
+  const separatorMatch = cleanedBlock.match(/^(.*?)\s*(?:[:\-–—|])\s*(.+)$/)
+  if (separatorMatch) {
+    const movie = separatorMatch[1].trim().replace(/^['"“]+|['"”]+$/g, '')
+    const reason = separatorMatch[2].trim()
+
+    if (movie && reason) return { movie, reason }
+  }
+
+  const lines = cleanedBlock.split(/\n+/).map((line) => line.trim()).filter(Boolean)
+  if (lines.length === 0) return null
+  if (lines.length === 1) return { movie: lines[0], reason: '' }
+
+  return { movie: lines[0], reason: lines.slice(1).join(' ') }
+}
+
 async function createEmbedding(query) {
   const response = await openai.embeddings.create({
     model: 'text-embedding-ada-002',
@@ -53,8 +89,10 @@ export async function generateRecommendationText(matches, usersChoiceData) {
   const messages = [
     {
       role: 'system',
-      content: `You are an enthusiastic movie expert who recommends the best matches for a small group. 
-      Use the provided movies and user preferences to make a helpful recommendation. 
+      content: `You are an enthusiastic movie expert who recommends the best matches for a small group.
+      Use the provided movies and user preferences to make a helpful recommendation.
+      Return 3 to 5 recommendations as a simple numbered list.
+      Format each line like this: "Movie Title — short reason".
       If you cannot answer from the available context, say you are unsure.`,
     },
     {
@@ -77,40 +115,11 @@ export async function generateRecommendationText(matches, usersChoiceData) {
 export async function generateMovieRecommendations(matches, usersChoiceData) {
   try {
     const text = await generateRecommendationText(matches, usersChoiceData)
-    if (!text || typeof text !== 'string') return []
+    if (typeof text !== 'string' || !text.trim()) return []
 
-    // Try splitting by numbered list (e.g., "1. Title - reason")
-    let parts = text.split(/\n\s*\d+\.\s*/).map(p => p.trim()).filter(Boolean)
-
-    // If that yields only one part, try splitting by double newlines
-    if (parts.length === 1) {
-      parts = text.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean)
-    }
-
-    const recommendations = parts.map(part => {
-      // Try to extract a title and reason separated by common separators
-      const sepMatch = part.match(/^\s*["“]?([^"”\n]+?)["”]?\s*(?:[:\-–—]\s*)([\s\S]*)$/)
-      if (sepMatch) {
-        return { movie: sepMatch[1].trim(), reason: sepMatch[2].trim() }
-      }
-
-      // Fallback: find first separator character
-      const dashIdx = part.search(/[:\-–—]/)
-      if (dashIdx !== -1) {
-        return { movie: part.slice(0, dashIdx).trim(), reason: part.slice(dashIdx + 1).trim() }
-      }
-
-      // Fallback: first line as title, rest as reason
-      const lines = part.split('\n').map(l => l.trim()).filter(Boolean)
-      if (lines.length >= 2) {
-        return { movie: lines[0], reason: lines.slice(1).join(' ') }
-      }
-
-      // Last resort: return the whole chunk as movie title with empty reason
-      return { movie: lines[0] || '', reason: '' }
-    })
-
-    return recommendations
+    return splitRecommendationBlocks(text)
+      .map(parseRecommendationBlock)
+      .filter(Boolean)
   } catch (err) {
     console.error('Error generating movie recommendations:', err)
     return []
